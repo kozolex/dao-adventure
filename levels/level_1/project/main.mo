@@ -1,4 +1,4 @@
-import Text "mo:base/Text";
+    import Text "mo:base/Text";
 import Buffer "mo:base/Buffer";
 actor class DAO() {
     //1 .Define an immutable variable name of type Text that represents the name of your DAO.

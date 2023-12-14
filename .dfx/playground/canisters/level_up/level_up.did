@@ -1,0 +1,5 @@
+service : {
+  counterInc: () -> () oneway;
+  getCounter: () -> (nat) query;
+  resetCounter: () -> () oneway;
+}

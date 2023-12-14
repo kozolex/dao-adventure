@@ -19,7 +19,12 @@
     "level_5": {
       "main": "levels/level_5/project/main.mo",
       "type": "motoko"
+    },
+    "level_up": {
+      "main": "levels/level_4/project/upcast.mo",
+      "type": "motoko"
     }
+    
   },
   "defaults": {
     "build": {

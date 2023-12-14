@@ -1,8 +1,10 @@
 import Account "account";
 import Result "mo:base/Result";
 import TrieMap "mo:base/TrieMap";
-import Buffer "mo:base/Buffer";
 import HashMap "mo:base/HashMap";
+import Buffer "mo:base/Buffer";
+import Nat "mo:base/Nat";
+import Hash "mo:base/Hash";
 import Iter "mo:base/Iter";
 import Principal "mo:base/Principal";
 actor class DAO() {
@@ -202,7 +204,6 @@ actor class DAO() {
     public type CreateProposalErr = {
         #NotDAOMember;
         #NotEnoughTokens;
-        #NotImplemented; // This is just a placeholder - can be removed once you start Level 4
     };
 
     public type createProposalResult = Result<CreateProposalOk, CreateProposalErr>;
@@ -214,24 +215,126 @@ actor class DAO() {
     };
 
     public type VoteErr = {
+        #NotDAOMember;
+        #NotEnoughTokens;
         #ProposalNotFound;
-        #AlreadyVoted;
         #ProposalEnded;
-        #NotImplemented; // This is just a placeholder - can be removed once you start Level 4
+        #AlreadyVoted;
     };
 
     public type voteResult = Result<VoteOk, VoteErr>;
 
-    public shared ({ caller }) func createProposal(manifest : Text) : async createProposalResult {
-        return #err(#NotImplemented);
-    };
+    /*1. Define a mutable variable nextProposalId of type Nat that will keep track of the next proposal's identifier. 
+    Every time a proposal is created, this variable will be incremented by 1.*/
+    var nextProposalId : Nat = 0;
+    /*2. Define an immutable variable called proposals of type TrieMap<Nat, Proposal>.
+    In this datastructure, the keys are of type Nat and represent the unique identifier of each proposal.
+     The values are of type Proposal and represent the proposal itself.*/
+    let proposals : TrieMap.TrieMap<Nat, Proposal> = TrieMap.TrieMap(Nat.equal, Hash.hash);
+    /*3. Implement the createProposal function. 
+    This function takes a manifest of type Text as a parameter and returns a CreateProposalResult type.
+    This function will be used to create a new proposal. 
+    The function should check if the caller is a member of the DAO and if they have enough tokens to create a proposal.
+    If that's the case, the function should create a new proposal and return the ProposalCreated case of the
+    CreateProposalOk type with the value of the proposal's id field. Otherwise it should return the corresponding error.
 
-    public query func getProposal(id : Nat) : async ?Proposal {
-        return null;
+    To avoid external malicious users from creating proposals and causing confusion, you will only allow proposals
+    to be created by members of the DAO, who own at least 1 tokens. Each proposal creation will cost 1 token and will
+    be burned.*/
+    func _isMember(caller : Principal) : Bool {
+        switch (dao.get(caller)) {
+            case (null) { return false };
+            case (?some) { return true };
+        };
     };
+    func _hasEnoughTokens(caller : Principal, amount : Nat) : Bool {
+        let defaultAccount = { owner = caller; subaccount = null };
+        switch (ledger.get(defaultAccount)) {
+            case (null) { return false };
+            case (?some) { return some >= 1000 };
+        };
+    };
+    func _burnTokens(caller : Principal, amount : Nat) : () {
+        let defaultAccount = { owner = caller; subaccount = null };
+        switch (ledger.get(defaultAccount)) {
+            case (null) { return };
+            case (?some) { ledger.put(defaultAccount, some - amount) };
+        };
+    };
+    public shared ({ caller }) func createProposal(manifest : Text) : async createProposalResult {
+        if (not _isMember(caller)) {
+            return #err(#NotDAOMember);
+        };
+        if (not _hasEnoughTokens(caller, 1)) {
+            return #err(#NotEnoughTokens);
+        };
+        let proposal = {
+            id = nextProposalId;
+            status = #Open;
+            manifest = manifest;
+            votes = 0;
+            voters = [];
+        };
+        proposals.put(nextProposalId, proposal);
+        nextProposalId += 1;
+        _burnTokens(caller, 1);
+        return #ok(proposal.id);
+    };
+    /*4. Implement the getProposal query function. 
+    This function takes a Nat as an argument and returns the proposal with the corresponding identifier as a ?Proposal.
+     If no proposal exists with the given identifier, it should return null.*/
+    public query func getProposal(id : Nat) : async ?Proposal {
+        return proposals.get(id);
+    };
+    /*Implement the vote function that takes a Nat and a Bool as arguments and returns a VoteResult type.
+    This function will be used to vote on a proposal. 
+    The Nat represents the identifier of the proposal and the Bool represents the vote.
+    If the Bool is true, the vote is an Up vote. If the Bool is false, the vote is a Down vote. 
+    The function should perfom necessary checks before accepting a vote.*/
 
     public shared ({ caller }) func vote(id : Nat, vote : Bool) : async voteResult {
-        return #err(#NotImplemented);
+        if (not _isMember(caller)) {
+            return #err(#NotDAOMember);
+        };
+        if (not _hasEnoughTokens(caller, 1)) {
+            return #err(#NotEnoughTokens);
+        };
+        let proposal = switch (proposals.get(id)) {
+            case (null) { return #err(#ProposalNotFound) };
+            case (?some) { some };
+        };
+        if (proposal.status != #Open) {
+            return #err(#ProposalEnded);
+        };
+        for (voter in proposal.voters.vals()) {
+            if (voter == caller) {
+                return #err(#AlreadyVoted);
+            };
+        };
+        let newVoters = Buffer.fromArray<Principal>(proposal.voters);
+        newVoters.add(caller);
+        let voteChange = if (vote == true) { 1 } else { -1 };
+        let newVote = proposal.votes + voteChange;
+        let newStatus = if (newVote >= 10) { #Accepted } else if (newVote <= -10) {
+            #Rejected;
+        } else { #Open };
+
+        let newProposal : Proposal = {
+            id = proposal.id;
+            status = newStatus;
+            manifest = proposal.manifest;
+            votes = newVote;
+            voters = Buffer.toArray(newVoters);
+        };
+        proposals.put(id, newProposal);
+        _burnTokens(caller, 1);
+        if (newStatus == #Accepted) {
+            return #ok(#ProposalAccepted);
+        };
+        if (newStatus == #Rejected) {
+            return #ok(#ProposalRefused);
+        };
+        return #ok(#ProposalOpen);
     };
 
     /// DO NOT REMOVE - Used for testing
