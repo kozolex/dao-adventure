@@ -239,7 +239,7 @@ actor class DAO()  {
     // LEVEL #5 //
     /////////////
 
-    // func _getWebpage() : Text {
+    func _getWebpage() : Text {
     //     var webpage = "<style>" #
     //     "body { text-align: center; font-family: Arial, sans-serif; background-color: #f0f8ff; color: #333; }" #
     //     "h1 { font-size: 3em; margin-bottom: 10px; }" #
